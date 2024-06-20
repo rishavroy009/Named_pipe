@@ -1,0 +1,104 @@
+#include <iostream>
+#include <fstream>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#define PIPE_NAME "/tmp/my_named_pipe"
+
+int main() {
+    // Path to the input file
+    const char* input_file_path = "input_data.bin";
+
+    // Open the input file
+    std::ifstream input_file(input_file_path, std::ios::binary | std::ios::ate);
+    if (!input_file) {
+        std::cerr << "Failed to open input file: " << input_file_path << std::endl;
+        return 1;
+    }
+
+    // Get the size of the file
+    std::streamsize file_size = input_file.tellg();
+    input_file.seekg(0, std::ios::beg);
+
+    if (file_size != 10485760) { // Check if file size is exactly 10 MB
+        std::cerr << "Input file is not 10 MB in size" << std::endl;
+        return 1;
+    }
+
+    // Create the named pipe
+    mkfifo(PIPE_NAME, 0666);
+
+    // Open the named pipe for writing
+    int pipe_fd = open(PIPE_NAME, O_WRONLY);
+    if (pipe_fd == -1) {
+        std::cerr << "Failed to open named pipe for writing" << std::endl;
+        return 1;
+    }
+
+    // Read the file data into a buffer
+    char buffer[10485760]; // 10 MB buffer
+    if (!input_file.read(buffer, file_size)) {
+        std::cerr << "Failed to read data from input file" << std::endl;
+        close(pipe_fd);
+        return 1;
+    }
+    input_file.close();
+
+    // Write the data to the named pipe
+    ssize_t bytes_written = write(pipe_fd, buffer, file_size);
+    if (bytes_written == -1) {
+        std::cerr << "Failed to write data to named pipe" << std::endl;
+        close(pipe_fd);
+        return 1;
+    }
+
+    std::cout << "Successfully wrote " << bytes_written << " bytes to the named pipe" << std::endl;
+    close(pipe_fd);
+    return 0;
+}
+//client
+#include <iostream>
+#include <fstream>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#define PIPE_NAME "/tmp/my_named_pipe"
+#define DATA_SIZE 10485760 // 10 MB
+#define OUTPUT_FILE "output_data.bin"
+
+int main() {
+    // Open the named pipe for reading
+    int pipe_fd = open(PIPE_NAME, O_RDONLY);
+    if (pipe_fd == -1) {
+        std::cerr << "Failed to open named pipe for reading" << std::endl;
+        return 1;
+    }
+
+    // Read data from the named pipe
+    char buffer[DATA_SIZE];
+    ssize_t bytes_read = read(pipe_fd, buffer, DATA_SIZE);
+    if (bytes_read == -1) {
+        std::cerr << "Failed to read data from named pipe" << std::endl;
+        close(pipe_fd);
+        return 1;
+    }
+
+    std::cout << "Successfully read " << bytes_read << " bytes from the named pipe" << std::endl;
+
+    // Write the data to an output file
+    std::ofstream output_file(OUTPUT_FILE, std::ios::binary);
+    if (!output_file) {
+        std::cerr << "Failed to open output file for writing" << std::endl;
+        close(pipe_fd);
+        return 1;
+    }
+
+    output_file.write(buffer, bytes_read);
+    output_file.close();
+    close(pipe_fd);
+    return 0;
+}
